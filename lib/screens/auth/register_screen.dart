@@ -1,9 +1,11 @@
 // lib/screens/auth/register_screen.dart
 import 'package:flutter/material.dart';
-import '../../services/auth_service.dart';
-import '../../services/storage_service.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:quiz_app_firebase/providers/user_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/storage_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   @override
@@ -11,9 +13,8 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final AuthService _auth = AuthService();
-  final StorageService _storage = StorageService();
   final _formKey = GlobalKey<FormState>();
+  final StorageService _storage = StorageService();
   
   String email = '';
   String password = '';
@@ -37,85 +38,94 @@ class _RegisterScreenState extends State<RegisterScreen> {
         backgroundColor: Colors.indigo[800],
         title: Text('Sign up', style: TextStyle(color: Colors.lightBlue[50])),
       ),
-      body: Container(
-        padding: EdgeInsets.symmetric(vertical: 20.0, horizontal: 50.0),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              children: <Widget>[
-                GestureDetector(
-                  onTap: _pickImage,
-                  child: CircleAvatar(
-                    radius: 50,
-                    backgroundColor: Colors.grey[300],
-                    backgroundImage: avatarImage != null ? FileImage(avatarImage!) : null,
-                    child: avatarImage == null
-                        ? Icon(Icons.add_a_photo, size: 40, color: Colors.grey[600])
-                        : null,
-                  ),
-                ),
-                SizedBox(height: 20.0),
-                TextFormField(
-                  decoration: InputDecoration(
-                    labelText: 'Email',
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
+      body: Consumer<AuthProvider>(
+        builder: (context, authProvider, _) => Container(
+          padding: EdgeInsets.symmetric(vertical: 20.0, horizontal: 50.0),
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                children: <Widget>[
+                  GestureDetector(
+                    onTap: _pickImage,
+                    child: CircleAvatar(
+                      radius: 50,
+                      backgroundColor: Colors.grey[300],
+                      backgroundImage: avatarImage != null ? FileImage(avatarImage!) : null,
+                      child: avatarImage == null
+                          ? Icon(Icons.add_a_photo, size: 40, color: Colors.grey[600])
+                          : null,
                     ),
                   ),
-                  validator: (val) => val!.isEmpty ? 'Enter an email' : null,
-                  onChanged: (val) => setState(() => email = val),
-                ),
-                SizedBox(height: 20.0),
-                TextFormField(
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
+                  SizedBox(height: 20.0),
+                  TextFormField(
+                    decoration: InputDecoration(
+                      labelText: 'Email',
+                      fillColor: Colors.white,
+                      filled: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
+                    validator: (val) => val!.isEmpty ? 'Enter an email' : null,
+                    onChanged: (val) => setState(() => email = val),
                   ),
-                  obscureText: true,
-                  validator: (val) => val!.length < 6 ? 'Enter a password 6+ chars long' : null,
-                  onChanged: (val) => setState(() => password = val),
-                ),
-                SizedBox(height: 20.0),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                    backgroundColor: Colors.indigo[800],
+                  SizedBox(height: 20.0),
+                  TextFormField(
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      fillColor: Colors.white,
+                      filled: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    obscureText: true,
+                    validator: (val) => val!.length < 6 ? 'Enter a password 6+ chars long' : null,
+                    onChanged: (val) => setState(() => password = val),
                   ),
-                  child: Text('Register', style: TextStyle(color: Colors.white)),
-                  onPressed: () async {
-                    if (_formKey.currentState!.validate()) {
-                      var result = await _auth.signUp(email, password);
-                      if (result == null) {
-                        setState(() => error = 'Please supply a valid email');
-                      } else if (avatarImage != null) {
-                        String avatarUrl = await _storage.uploadAvatar(
-                          avatarImage!,
-                          result.user!.uid,
-                        );
-                        // Update user profile with avatar URL
-                        // ... Update Firestore user document
-                        Navigator.pushReplacementNamed(context, '/quiz');
-                      }
-                    }
-                  },
-                ),
-                SizedBox(height: 12.0),
-                Text(
-                  error,
-                  style: TextStyle(color: Colors.red, fontSize: 14.0),
-                ),
-                TextButton(
-                  child: Text('Already have an account? Sign in'),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
+                  SizedBox(height: 20.0),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                      backgroundColor: Colors.indigo[800],
+                    ),
+                    child: authProvider.isLoading
+                      ? CircularProgressIndicator(color: Colors.white)
+                      : Text('Register', style: TextStyle(color: Colors.white)),
+                    onPressed: authProvider.isLoading 
+                      ? null 
+                      : () async {
+                          if (_formKey.currentState!.validate()) {
+                            var result = await authProvider.signUp(email, password);
+                            if (result == null) {
+                              setState(() => error = 'Please supply a valid email');
+                            } else if (avatarImage != null) {
+                              String avatarUrl = await _storage.uploadAvatar(
+                                avatarImage!,
+                                result.user!.uid,
+                              );
+                              // Update Firebase Auth profile
+                              await result.user?.updatePhotoURL(avatarUrl);
+                              // Load user data after successful login
+                              await context.read<UserProvider>().loadUser(result.user!.uid);
+                              // Update user profile with avatar URL
+                              Navigator.pushReplacementNamed(context, '/quiz');
+                            }
+                          }
+                        },
+                  ),
+                  SizedBox(height: 12.0),
+                  Text(
+                    error,
+                    style: TextStyle(color: Colors.red, fontSize: 14.0),
+                  ),
+                  TextButton(
+                    child: Text('Already have an account? Sign in'),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

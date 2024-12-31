@@ -6,13 +6,13 @@ class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // Users Collection
-  Future<void> createUser(UserModel user) async {
-    await _db.collection('users').doc(user.uid).set(user.toMap());
-  }
+Future<void> createUser(UserModel user) async {
+  await _db.collection('users').doc(user.uid).set(user.toMap());
+}
 
-  Future<void> updateUser(UserModel user) async {
-    await _db.collection('users').doc(user.uid).update(user.toMap());
-  }
+Future<void> updateUser(UserModel user) async {
+  await _db.collection('users').doc(user.uid).update(user.toMap());
+}
 
   Stream<UserModel> getUserStream(String uid) {
     return _db
@@ -31,14 +31,6 @@ class FirestoreService {
     return _db.collection('questions').snapshots().map((snapshot) {
       return snapshot.docs.map((doc) => Question.fromFirestore(doc)).toList();
     });
-  }
-
-  Future<void> updateQuestion(Question question) async {
-    await _db.collection('questions').doc(question.id).update(question.toMap());
-  }
-
-  Future<void> deleteQuestion(String questionId) async {
-    await _db.collection('questions').doc(questionId).delete();
   }
 
   // User Scores

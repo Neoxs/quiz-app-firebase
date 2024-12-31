@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:audioplayers/audioplayers.dart';
-import '../../services/auth_service.dart';
-import '../../services/firestore_service.dart';
-import '../../services/analytics_service.dart';
-import '../../models/question.dart';
+import 'package:quiz_app_firebase/services/auth_service.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/quiz_provider.dart';
 import '../../widgets/question_card.dart';
 import '../../widgets/answer_buttons.dart';
 import '../../widgets/score_display.dart';
@@ -19,69 +19,31 @@ class QuizPage extends StatefulWidget {
 }
 
 class _QuizPageState extends State<QuizPage> {
-  final FirestoreService _firestoreService = FirestoreService();
-  final AuthService _authService = AuthService();
-  final AnalyticsService _analyticsService = AnalyticsService();
   final AudioPlayer _audioPlayer = AudioPlayer();
-  
-  int _currentIndex = 0;
-  int _score = 0;
-  List<Question> _questions = [];
-  bool? _selectedAnswer;
-  bool _isLoading = true;
-  String? _errorMessage;
+  final AuthService _authService = AuthService();
 
   @override
   void initState() {
     super.initState();
-    _loadQuestions();
-  }
-
-  Future<void> _loadQuestions() async {
-    try {
-      setState(() => _isLoading = true);
-      _firestoreService.getQuestions().listen(
-        (questions) {
-          setState(() {
-            _questions = questions;
-            _isLoading = false;
-          });
-        },
-        onError: (error) {
-          setState(() {
-            _errorMessage = 'Error loading questions: $error';
-            _isLoading = false;
-          });
-        },
-      );
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Error: $e';
-        _isLoading = false;
-      });
-    }
+    // Initialize quiz data
+    Future.microtask(() => 
+      context.read<QuizProvider>().initialize()
+    );
   }
 
   Future<void> _checkAnswer(bool userAnswer) async {
-    if (_selectedAnswer != null) return;
+    QuizProvider quizProvider = context.read<QuizProvider>();
+    
+    if (quizProvider.selectedAnswer != null) return;
 
-    setState(() => _selectedAnswer = userAnswer);
-    bool isCorrect = userAnswer == _questions[_currentIndex].isCorrect;
-
+    quizProvider.checkAnswer(userAnswer);
+    
     // Play sound effect
     await _audioPlayer.play(AssetSource(
-      isCorrect ? 'sounds/correct.mp3' : 'sounds/wrong.mp3'
+      userAnswer == quizProvider.currentQuestion.isCorrect 
+        ? 'sounds/correct.mp3' 
+        : 'sounds/wrong.mp3'
     ));
-
-    if (isCorrect) {
-      setState(() => _score++);
-    }
-
-    // // Log analytics
-    // await _analyticsService.logQuestionAnswered(
-    //   _questions[_currentIndex].id,
-    //   isCorrect
-    // );
 
     // Wait before moving to next question
     await Future.delayed(Duration(seconds: 1));
@@ -89,26 +51,19 @@ class _QuizPageState extends State<QuizPage> {
   }
 
   void _nextQuestion() {
-    setState(() {
-      if (_currentIndex < _questions.length - 1) {
-        _currentIndex++;
-        _selectedAnswer = null;
-      } else {
-        _showResults();
-      }
-    });
+    QuizProvider quizProvider = context.read<QuizProvider>();
+    if (quizProvider.currentIndex < quizProvider.questions.length - 1) {
+      quizProvider.nextQuestion();
+    } else {
+      _showResults();
+    }
   }
 
   void _showResults() {
-    final percentage = (_score / _questions.length * 100).toStringAsFixed(1);
+    QuizProvider quizProvider = context.read<QuizProvider>();
+    final percentage = (quizProvider.score / quizProvider.questions.length * 100)
+        .toStringAsFixed(1);
     
-    // // Log final score
-    // _analyticsService.logQuizScore(
-    //   _authService.currentUser?.uid ?? 'anonymous',
-    //   _score,
-    //   'general'
-    // );
-
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -118,7 +73,7 @@ class _QuizPageState extends State<QuizPage> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Score: $_score/${_questions.length}'),
+              Text('Score: ${quizProvider.score}/${quizProvider.questions.length}'),
               Text('Pourcentage: $percentage%'),
               SizedBox(height: 20),
               Text(
@@ -137,11 +92,7 @@ class _QuizPageState extends State<QuizPage> {
           actions: [
             TextButton(
               onPressed: () {
-                setState(() {
-                  _currentIndex = 0;
-                  _score = 0;
-                  _selectedAnswer = null;
-                });
+                quizProvider.resetQuiz();
                 Navigator.of(context).pop();
               },
               child: Text('Recommencer'),
@@ -156,12 +107,14 @@ class _QuizPageState extends State<QuizPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title, style: TextStyle(color: Colors.lightBlue[50]),),
+        title: Text(widget.title, style: TextStyle(color: Colors.lightBlue[50])),
         backgroundColor: Colors.indigo[800],
         actions: [
-          UserAvatar(
-            avatarUrl: _authService.currentUser?.photoURL,
-            onTap: () => Navigator.pushNamed(context, '/profile'),
+          Consumer<AuthProvider>(
+            builder: (context, authProvider, child) => UserAvatar(
+              avatarUrl: _authService.currentUser?.photoURL,
+              onTap: () => Navigator.pushNamed(context, '/profile'),
+            ),
           ),
           IconButton(
             icon: Icon(Icons.add, color: Colors.lightBlue[50]),
@@ -170,54 +123,54 @@ class _QuizPageState extends State<QuizPage> {
           IconButton(
             icon: Icon(Icons.logout, color: Colors.lightBlue[50]),
             onPressed: () async {
-              await _authService.signOut();
+              await context.read<AuthProvider>().signOut();
               Navigator.pushReplacementNamed(context, '/login');
             },
           ),
         ],
       ),
-      body: _buildBody(),
-    );
-  }
+      body: Consumer<QuizProvider>(
+        builder: (context, quizProvider, child) {
+          if (quizProvider.isLoading) {
+            return Center(child: CircularProgressIndicator());
+          }
 
-  Widget _buildBody() {
-    if (_isLoading) {
-      return Center(child: CircularProgressIndicator());
-    }
+          if (quizProvider.errorMessage != null) {
+            return Center(child: Text(quizProvider.errorMessage!));
+          }
 
-    if (_errorMessage != null) {
-      return Center(child: Text(_errorMessage!));
-    }
+          if (quizProvider.questions.isEmpty) {
+            return Center(child: Text('No questions available'));
+          }
 
-    if (_questions.isEmpty) {
-      return Center(child: Text('No questions available'));
-    }
-
-    return Padding(
-      padding: EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          ScoreDisplay(
-            currentScore: _score,
-            totalQuestions: _questions.length,
-          ),
-          SizedBox(height: 20),
-          QuestionCard(question: _questions[_currentIndex]),
-          SizedBox(height: 20),
-          AnswerButtons(
-            onAnswerSelected: _checkAnswer,
-            selectedAnswer: _selectedAnswer,
-            isCorrect: _selectedAnswer != null 
-                ? _questions[_currentIndex].isCorrect 
-                : null,
-          ),
-          SizedBox(height: 20),
-          QuizProgressIndicator(
-            currentQuestion: _currentIndex,
-            totalQuestions: _questions.length,
-          ),
-        ],
+          return Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ScoreDisplay(
+                  currentScore: quizProvider.score,
+                  totalQuestions: quizProvider.questions.length,
+                ),
+                SizedBox(height: 20),
+                QuestionCard(question: quizProvider.currentQuestion),
+                SizedBox(height: 20),
+                AnswerButtons(
+                  onAnswerSelected: _checkAnswer,
+                  selectedAnswer: quizProvider.selectedAnswer,
+                  isCorrect: quizProvider.selectedAnswer != null 
+                      ? quizProvider.currentQuestion.isCorrect 
+                      : null,
+                ),
+                SizedBox(height: 20),
+                QuizProgressIndicator(
+                  currentQuestion: quizProvider.currentIndex,
+                  totalQuestions: quizProvider.questions.length,
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

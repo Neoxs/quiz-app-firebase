@@ -36,26 +36,4 @@ class StorageService {
       throw Exception('Failed to upload avatar');
     }
   }
-
-  // Delete file
-  Future<void> deleteFile(String fileUrl) async {
-    try {
-      Reference ref = _storage.refFromURL(fileUrl);
-      await ref.delete();
-    } catch (e) {
-      print('Delete error: $e');
-      throw Exception('Failed to delete file');
-    }
-  }
-
-  // Get audio URL
-  Future<String> getAudioURL(String soundName) async {
-    try {
-      Reference ref = _storage.ref().child('sounds/$soundName');
-      return await ref.getDownloadURL();
-    } catch (e) {
-      print('Audio URL error: $e');
-      throw Exception('Failed to get audio URL');
-    }
-  }
 }
