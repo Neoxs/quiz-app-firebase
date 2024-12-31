@@ -14,11 +14,9 @@ class AnswerButtons extends StatelessWidget {
   }) : super(key: key);
 
   Color _getButtonColor(bool isTrue) {
-    if (selectedAnswer == null) {
-      return Colors.grey;
-    } else {
-      return isTrue ? Colors.green : Colors.red;
-    }
+    return selectedAnswer == isTrue
+            ? (isCorrect == isTrue ? Colors.teal : Colors.deepOrange)
+            : Colors.blueGrey;
   }
 
   @override
